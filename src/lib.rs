@@ -57,19 +57,19 @@ impl Merkle {
 
     pub fn set_simple(&mut self, index: u64, data: &[u64; 4]) {
         // place a dummy get for merkle proof convension
-        unsafe {
-            merkle_address(index);
+        // unsafe {
+        //     merkle_address(index);
 
-            merkle_setroot(self.root[0]);
-            merkle_setroot(self.root[1]);
-            merkle_setroot(self.root[2]);
-            merkle_setroot(self.root[3]);
+        //     merkle_setroot(self.root[0]);
+        //     merkle_setroot(self.root[1]);
+        //     merkle_setroot(self.root[2]);
+        //     merkle_setroot(self.root[3]);
 
-            merkle_get();
-            merkle_get();
-            merkle_get();
-            merkle_get();
-        }
+        //     merkle_get();
+        //     merkle_get();
+        //     merkle_get();
+        //     merkle_get();
+        // }
 
         unsafe {
             merkle_address(index);
@@ -129,19 +129,19 @@ impl Merkle {
 
     pub fn set(&mut self, index: u64, data: &[u64], pad: bool) {
         // place a dummy get for merkle proof convension
-        unsafe {
-            merkle_address(index);
+        // unsafe {
+        //     merkle_address(index);
 
-            merkle_setroot(self.root[0]);
-            merkle_setroot(self.root[1]);
-            merkle_setroot(self.root[2]);
-            merkle_setroot(self.root[3]);
+        //     merkle_setroot(self.root[0]);
+        //     merkle_setroot(self.root[1]);
+        //     merkle_setroot(self.root[2]);
+        //     merkle_setroot(self.root[3]);
 
-            merkle_get();
-            merkle_get();
-            merkle_get();
-            merkle_get();
-        }
+        //     merkle_get();
+        //     merkle_get();
+        //     merkle_get();
+        //     merkle_get();
+        // }
 
         unsafe {
             merkle_address(index);
