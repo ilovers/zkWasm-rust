@@ -116,11 +116,11 @@ impl Merkle {
                 }
 
                 // FIXME: avoid copy here
-                // let hash_check = PoseidonHasher::hash(&data[0..len as usize], pad);
-                // require(hash[0] == hash_check[0]);
-                // require(hash[1] == hash_check[1]);
-                // require(hash[2] == hash_check[2]);
-                // require(hash[3] == hash_check[3]);
+                let hash_check = PoseidonHasher::hash(&data[0..len as usize], pad);
+                require(hash[0] == hash_check[0]);
+                require(hash[1] == hash_check[1]);
+                require(hash[2] == hash_check[2]);
+                require(hash[3] == hash_check[3]);
             }
             len
         }
