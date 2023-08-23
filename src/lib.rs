@@ -1,29 +1,31 @@
+use bytemuck::cast_slice;
 use primitive_types::U256;
+use sha2::{Digest, Sha256};
 
 extern "C" {
     pub fn wasm_input(is_public: u32) -> u64;
-    pub fn require(cond:bool);
-    pub fn wasm_dbg(v:u64);
+    pub fn require(cond: bool);
+    pub fn wasm_dbg(v: u64);
 
-    pub fn merkle_setroot(x:u64);
-    pub fn merkle_address(x:u64);
-    pub fn merkle_set(x:u64);
+    pub fn merkle_setroot(x: u64);
+    pub fn merkle_address(x: u64);
+    pub fn merkle_set(x: u64);
     pub fn merkle_get() -> u64;
     pub fn merkle_getroot() -> u64;
     pub fn merkle_fetch_data() -> u64;
-    pub fn merkle_put_data(x:u64);
-    pub fn poseidon_new(x:u64);
-    pub fn poseidon_push(x:u64);
+    pub fn merkle_put_data(x: u64);
+    pub fn poseidon_new(x: u64);
+    pub fn poseidon_push(x: u64);
     pub fn poseidon_finalize() -> u64;
 
-    pub fn babyjubjub_sum_new(x:u64);
-    pub fn babyjubjub_sum_push(x:u64);
+    pub fn babyjubjub_sum_new(x: u64);
+    pub fn babyjubjub_sum_push(x: u64);
     pub fn babyjubjub_sum_finalize() -> u64;
 
 }
 
 pub struct Merkle {
-    pub root: [u64; 4]
+    pub root: [u64; 4],
 }
 
 impl Merkle {
@@ -35,7 +37,12 @@ impl Merkle {
 
     pub fn new() -> Self {
         //THE following is the depth=31, 32 level merkle root default
-        let root = [11826054925775482837, 5943555147602679911, 3550282808714298530, 3363170373529648096];
+        let root = [
+            11826054925775482837,
+            5943555147602679911,
+            3550282808714298530,
+            3363170373529648096,
+        ];
         Merkle { root }
     }
 
@@ -91,8 +98,7 @@ impl Merkle {
         }
     }
 
-
-    pub fn get(&self, index: u64, data: &mut [u64], pad: bool) -> u64 {
+    pub fn get(&self, index: u64, data: &mut [u64], _pad: bool) -> u64 {
         let mut hash = [0; 4];
         unsafe {
             merkle_address(index);
@@ -108,14 +114,15 @@ impl Merkle {
             hash[3] = merkle_get();
 
             let len = merkle_fetch_data();
-            if len>0 {
+            if len > 0 {
                 require(len <= data.len() as u64);
                 for i in 0..len {
                     data[i as usize] = merkle_fetch_data();
                 }
 
                 // FIXME: avoid copy here
-                let hash_check = PoseidonHasher::hash(&data[0..len as usize], pad);
+                // let hash_check = PoseidonHasher::hash(&data[0..len as usize], pad);
+                let hash_check = hash_for_test(&data[0..len as usize]);
                 require(hash[0] == hash_check[0]);
                 require(hash[1] == hash_check[1]);
                 require(hash[2] == hash_check[2]);
@@ -125,8 +132,7 @@ impl Merkle {
         }
     }
 
-
-    pub fn set(&mut self, index: u64, data: &[u64], pad: bool) {
+    pub fn set(&mut self, index: u64, data: &[u64], _pad: bool) {
         // place a dummy get for merkle proof convension
         unsafe {
             merkle_address(index);
@@ -154,7 +160,7 @@ impl Merkle {
                 merkle_put_data(*d);
             }
 
-            let hash = PoseidonHasher::hash(data, pad);
+            let hash = hash_for_test(data);
             merkle_set(hash[0]);
             merkle_set(hash[1]);
             merkle_set(hash[2]);
@@ -168,7 +174,23 @@ impl Merkle {
     }
 }
 
-pub struct PoseidonHasher (u64);
+pub fn hash_for_test(data: &[u64]) -> [u64; 4] {
+    let u8_slice: &[u8] = cast_slice(data);
+    let mut hasher = Sha256::new();
+    hasher.update(u8_slice);
+    let result = hasher.finalize();
+    let mut hash: [u8; 32] = [0; 32];
+    hash.copy_from_slice(&result);
+
+    let mut u64_array: [u64; 4] = [0; 4];
+
+    for (i, chunk) in hash.chunks_exact(8).enumerate() {
+        u64_array[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+    }
+    u64_array
+}
+
+pub struct PoseidonHasher(u64);
 
 impl PoseidonHasher {
     pub fn new() -> Self {
@@ -183,10 +205,10 @@ impl PoseidonHasher {
             let group = data.len() / 3;
             let mut j = 0;
             for i in 0..group {
-                j = i*3;
+                j = i * 3;
                 hasher.update(data[j]);
-                hasher.update(data[j+1]);
-                hasher.update(data[j+2]);
+                hasher.update(data[j + 1]);
+                hasher.update(data[j + 2]);
                 hasher.update(0u64);
             }
             for i in j..data.len() {
@@ -199,7 +221,7 @@ impl PoseidonHasher {
         }
         hasher.finalize()
     }
-    pub fn update(&mut self, v:u64) {
+    pub fn update(&mut self, v: u64) {
         unsafe {
             poseidon_push(v);
         }
@@ -217,7 +239,7 @@ impl PoseidonHasher {
     }
     pub fn finalize(&mut self) -> [u64; 4] {
         if (self.0 & 0x3) != 0 {
-            for _ in (self.0 & 0x3) .. 4 {
+            for _ in (self.0 & 0x3)..4 {
                 unsafe {
                     poseidon_push(0);
                 }
@@ -238,7 +260,7 @@ impl PoseidonHasher {
             poseidon_push(1);
         }
         self.0 += 1;
-        for _ in self.0 .. 32 {
+        for _ in self.0..32 {
             unsafe {
                 poseidon_push(0);
             }
@@ -278,7 +300,7 @@ pub fn negative_of_fr(b: &[u64; 4]) -> [u64; 4] {
             a[i] -= b[i] + borrow;
             borrow = 0;
         }
-    };
+    }
     a
 }
 
@@ -319,16 +341,16 @@ impl BabyJubjubPoint {
         unsafe {
             BabyJubjubPoint {
                 x: U256([
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
                 ]),
                 y: U256([
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
-                   babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
+                    babyjubjub_sum_finalize(),
                 ]),
             }
         }
@@ -345,42 +367,50 @@ pub struct JubjubSignature {
 // let lhs = vk.mul_scalar(&c).add(&sig_r);
 // let rhs = p_g.mul_scalar(&sig_s);
 
-const NEG_BASE:BabyJubjubPoint = BabyJubjubPoint {
-            x: U256([5098030607081443850, 11739138394996609992, 7617911478965053006, 103675969630295906]),
-            y: U256([10973966134842004663, 8445032247919564157, 8665528646177973254, 405343104476405055]),
-        };
+const NEG_BASE: BabyJubjubPoint = BabyJubjubPoint {
+    x: U256([
+        5098030607081443850,
+        11739138394996609992,
+        7617911478965053006,
+        103675969630295906,
+    ]),
+    y: U256([
+        10973966134842004663,
+        8445032247919564157,
+        8665528646177973254,
+        405343104476405055,
+    ]),
+};
 
 impl JubjubSignature {
     pub fn verify(&self, pk: &BabyJubjubPoint, msghash: &[u64; 4]) {
         unsafe {
             let r = BabyJubjubPoint::msm(vec![
                 (pk, msghash),
-                (&self.sig_r, &[1,0,0,0]),
+                (&self.sig_r, &[1, 0, 0, 0]),
                 (&NEG_BASE, &self.sig_s),
             ]);
-            require(r.x == U256([0,0,0,0]));
-            require(r.y == U256([1,0,0,0]));
+            require(r.x == U256([0, 0, 0, 0]));
+            require(r.y == U256([1, 0, 0, 0]));
         }
     }
 }
 
-
 #[cfg(feature = "test")]
-
 
 mod test {
     extern "C" {
         pub fn wasm_input(is_public: u32) -> u64;
         pub fn require(cond: bool);
-        pub fn wasm_dbg(v:u64);
+        pub fn wasm_dbg(v: u64);
 
-        pub fn kvpair_setroot(x:u64);
-        pub fn kvpair_address(x:u64);
-        pub fn kvpair_set(x:u64);
+        pub fn kvpair_setroot(x: u64);
+        pub fn kvpair_address(x: u64);
+        pub fn kvpair_set(x: u64);
         pub fn kvpair_get() -> u64;
         pub fn kvpair_getroot() -> u64;
-        pub fn poseidon_new(x:u64);
-        pub fn poseidon_push(x:u64);
+        pub fn poseidon_new(x: u64);
+        pub fn poseidon_push(x: u64);
         pub fn poseidon_finalize() -> u64;
     }
 
@@ -389,9 +419,8 @@ mod test {
     use super::Merkle;
     use primitive_types::U256;
 
-
-    use wasm_bindgen::prelude::*;
     use super::PoseidonHasher;
+    use wasm_bindgen::prelude::*;
     #[wasm_bindgen]
     pub fn zkmain() -> i64 {
         let mut hasher = PoseidonHasher::new();
@@ -407,63 +436,86 @@ mod test {
         */
 
         let mut merkle = Merkle::new();
-        let mut leaf = [0,0,0,0];
+        let mut leaf = [0, 0, 0, 0];
 
-        merkle.set(0, &[1,1,2,2], false);
+        merkle.set(0, &[1, 1, 2, 2], false);
 
         let len = merkle.get(0, &mut leaf, false);
 
         unsafe {
             require(len == 4);
-            require(leaf == [1,1,2,2]);
+            require(leaf == [1, 1, 2, 2]);
         }
 
-
-        merkle.set(0, &[3,4,5,6,7], true);
-        let mut leaf = [0,0,0,0,0];
+        merkle.set(0, &[3, 4, 5, 6, 7], true);
+        let mut leaf = [0, 0, 0, 0, 0];
 
         let len = merkle.get(0, &mut leaf, true);
 
         unsafe {
             require(len == 5);
-            require(leaf == [3,4,5,6,7]);
+            require(leaf == [3, 4, 5, 6, 7]);
         }
 
-        merkle.set_simple(1, &[4,5,6,7]);
-        let mut leaf2 = [0,0,0,0];
+        merkle.set_simple(1, &[4, 5, 6, 7]);
+        let mut leaf2 = [0, 0, 0, 0];
 
         merkle.get_simple(1, &mut leaf2);
 
         unsafe {
-            require(leaf2 == [4,5,6,7]);
+            require(leaf2 == [4, 5, 6, 7]);
         }
 
-
-
-
-        let c = BabyJubjubPoint {x:U256([0,0,0,0]), y:U256([1, 0, 0, 0])};
-        let p = BabyJubjubPoint::msm(vec![(&c, &[1,0,0,0])]);
+        let c = BabyJubjubPoint {
+            x: U256([0, 0, 0, 0]),
+            y: U256([1, 0, 0, 0]),
+        };
+        let p = BabyJubjubPoint::msm(vec![(&c, &[1, 0, 0, 0])]);
 
         unsafe {
             require(p.x.0[0] == 0);
             require(p.y.0[0] == 1);
         }
 
-
         let sig = JubjubSignature {
-            sig_r : BabyJubjubPoint {
-                x: U256([3942246333445170378, 4927712981048651912, 7483524259745080053, 60536396037540871]),
-                y: U256([14850245140538961756, 11076552477444376689, 6805567804001881962, 3473463521075824379]),
+            sig_r: BabyJubjubPoint {
+                x: U256([
+                    3942246333445170378,
+                    4927712981048651912,
+                    7483524259745080053,
+                    60536396037540871,
+                ]),
+                y: U256([
+                    14850245140538961756,
+                    11076552477444376689,
+                    6805567804001881962,
+                    3473463521075824379,
+                ]),
             },
-            sig_s: [13068069613806562103, 2598268142923890778, 9227627411507601187, 303022261472651166]
+            sig_s: [
+                13068069613806562103,
+                2598268142923890778,
+                9227627411507601187,
+                303022261472651166,
+            ],
         };
 
         let pk = BabyJubjubPoint {
-            x: U256([7885996749535148040, 5452996086172756687, 10631572794003595355, 1413880906945024417]),
-            y: U256([13330009580783412631, 14458870954835491754, 9623332966787297474, 160649411381582638]),
+            x: U256([
+                7885996749535148040,
+                5452996086172756687,
+                10631572794003595355,
+                1413880906945024417,
+            ]),
+            y: U256([
+                13330009580783412631,
+                14458870954835491754,
+                9623332966787297474,
+                160649411381582638,
+            ]),
         };
 
-        sig.verify(&pk, &[32195221423877958,0,0,0]);
+        sig.verify(&pk, &[32195221423877958, 0, 0, 0]);
         0
     }
 }

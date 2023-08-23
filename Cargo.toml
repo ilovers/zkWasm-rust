@@ -16,3 +16,5 @@ test = []
 [dependencies]
 primitive-types = {version="0.12.1", default-features = false}
 wasm-bindgen = "0.2.83"
+sha2 = "0.10.7"
+bytemuck = "1.7"
